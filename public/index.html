@@ -1,143 +1,171 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MISSION CONTROL: ESP32</title>
+    <title>ระบบติดตามเซ็นเซอร์</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+    />
     <style>
       body {
-        background-color: #0d1117;
-        color: #00f0ff;
-        font-family: "Courier New", Courier, monospace;
+        background-color: #f0f4f8;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
       }
-      .glass {
-        background: rgba(22, 27, 34, 0.9);
-        border: 1px solid #30363d;
-        box-shadow: 0 0 10px rgba(0, 240, 255, 0.1);
+      .card {
+        background: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        transition: box-shadow 0.2s;
       }
-      .blink {
-        animation: blinker 1s linear infinite;
+      .card:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
       }
-      @keyframes blinker {
-        50% {
-          opacity: 0;
-        }
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
       }
-      /* สไตล์ Scrollbar ให้ดูดุๆ */
-      ::-webkit-scrollbar {
-        width: 8px;
+      .status-online {
+        background-color: #22c55e;
+        box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+        animation: pulse-green 2s infinite;
       }
-      ::-webkit-scrollbar-track {
-        background: #0d1117;
+      .status-offline {
+        background-color: #ef4444;
       }
-      ::-webkit-scrollbar-thumb {
-        background: #238636;
+      @keyframes pulse-green {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+      @keyframes alert-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+      }
+      .alert-active {
+        animation: alert-pulse 0.8s ease-in-out infinite;
+      }
+      .moisture-bar {
+        height: 8px;
         border-radius: 4px;
+        transition: width 0.5s ease;
       }
     </style>
   </head>
-  <body class="p-4">
-    <div
-      class="flex justify-between items-center mb-6 border-b border-gray-700 pb-2"
-    >
-      <h1 class="text-3xl font-bold text-white tracking-widest">
-        SYSTEM MONITOR
-        <span class="text-xs text-green-500 blink">● ONLINE</span>
-      </h1>
-      <div class="text-right">
-        <p class="text-xs text-gray-400">
-          SERVER: <span id="server-ip">CONNECTING...</span>
-        </p>
-        <p class="text-xs text-gray-400">
-          UPTIME: <span id="uptime">00:00:00</span>
-        </p>
-      </div>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <div class="md:col-span-1 space-y-4">
-        <div class="glass p-4 rounded-lg border-l-4 border-blue-500">
-          <h3 class="text-xs text-gray-400 uppercase">Soil Moisture</h3>
-          <div class="flex items-end justify-between">
-            <span id="soil" class="text-4xl font-bold text-blue-400">--</span>
-            <span class="text-xs text-blue-900 bg-blue-300 px-1 rounded"
-              >ADC</span
-            >
-          </div>
+  <body class="min-h-screen p-4 md:p-6">
+    <!-- Header -->
+    <div class="max-w-6xl mx-auto">
+      <div class="flex justify-between items-center mb-6">
+        <div>
+          <h1 class="text-2xl md:text-3xl font-bold text-gray-800">
+            <i class="fas fa-seedling text-green-500 mr-2"></i>
+            ระบบติดตามเซ็นเซอร์
+          </h1>
+          <p class="text-sm text-gray-500 mt-1">แดชบอร์ดแสดงข้อมูลจากเซ็นเซอร์แบบเรียลไทม์</p>
         </div>
-        <div class="glass p-4 rounded-lg border-l-4 border-yellow-500">
-          <h3 class="text-xs text-gray-400 uppercase">Light Intensity</h3>
-          <div class="flex items-end justify-between">
-            <span id="light" class="text-4xl font-bold text-yellow-400"
-              >--</span
-            >
-            <span class="text-xs text-yellow-900 bg-yellow-300 px-1 rounded"
-              >LUM</span
-            >
+        <div class="text-right">
+          <div class="flex items-center gap-2 justify-end">
+            <span class="status-dot status-online" id="status-dot"></span>
+            <span class="text-sm font-medium text-gray-600" id="connection-status">กำลังเชื่อมต่อ...</span>
           </div>
-        </div>
-        <div class="glass p-4 rounded-lg border-l-4 border-red-500">
-          <h3 class="text-xs text-gray-400 uppercase">Security Status</h3>
-          <div id="motion-box" class="text-2xl font-bold text-red-500 mt-2">
-            SCANNING...
-          </div>
-        </div>
-
-        <div class="glass p-2 rounded-lg">
-          <canvas id="radarChart"></canvas>
+          <p class="text-xs text-gray-400 mt-1">
+            เวลาทำงาน: <span id="uptime">00:00:00</span>
+          </p>
         </div>
       </div>
 
-      <div class="md:col-span-3 space-y-4">
-        <div class="glass p-4 rounded-lg h-80">
-          <h3 class="text-xs text-gray-400 mb-2">
-            /// REAL-TIME SENSOR TELEMETRY
+      <!-- Sensor Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <!-- Soil Moisture Card -->
+        <div class="card p-5">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+              <i class="fas fa-droplet text-blue-500 text-lg"></i>
+            </div>
+            <div>
+              <h3 class="text-sm font-medium text-gray-500">ความชื้นในดิน</h3>
+              <p class="text-xs text-gray-400">Soil Moisture Sensor</p>
+            </div>
+          </div>
+          <div class="flex items-end justify-between mb-2">
+            <span id="soil" class="text-4xl font-bold text-blue-600">--</span>
+          </div>
+          <div class="w-full bg-blue-100 rounded-full overflow-hidden">
+            <div class="moisture-bar bg-blue-500" style="width: 0%" id="soil-bar"></div>
+          </div>
+          <p class="text-xs text-gray-400 mt-2" id="soil-desc">รอรับข้อมูล...</p>
+        </div>
+
+        <!-- Light Intensity Card -->
+        <div class="card p-5">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
+              <i class="fas fa-sun text-yellow-500 text-lg"></i>
+            </div>
+            <div>
+              <h3 class="text-sm font-medium text-gray-500">ความเข้มแสง</h3>
+              <p class="text-xs text-gray-400">Light Sensor</p>
+            </div>
+          </div>
+          <div class="flex items-end justify-between mb-2">
+            <span id="light" class="text-4xl font-bold text-yellow-600">--</span>
+          </div>
+          <div class="w-full bg-yellow-100 rounded-full overflow-hidden">
+            <div class="moisture-bar bg-yellow-500" style="width: 0%" id="light-bar"></div>
+          </div>
+          <p class="text-xs text-gray-400 mt-2" id="light-desc">รอรับข้อมูล...</p>
+        </div>
+
+        <!-- Distance Sensor Card -->
+        <div class="card p-5" id="distance-card">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center" id="distance-icon-bg">
+              <i class="fas fa-ruler text-purple-500 text-lg" id="distance-icon"></i>
+            </div>
+            <div>
+              <h3 class="text-sm font-medium text-gray-500">ตรวจจับระยะทาง</h3>
+              <p class="text-xs text-gray-400">Distance Sensor</p>
+            </div>
+          </div>
+          <div id="distance-box" class="text-center py-3">
+            <div class="text-3xl mb-2" id="distance-value">
+              <span class="text-4xl font-bold text-purple-600">--</span>
+              <span class="text-lg text-gray-500"> m</span>
+            </div>
+            <p class="text-sm font-semibold text-gray-500" id="distance-text">กำลังตรวจสอบ...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart Section -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="md:col-span-2 card p-5">
+          <h3 class="text-sm font-medium text-gray-500 mb-3">
+            <i class="fas fa-chart-line text-indigo-400 mr-1"></i>
+            กราฟข้อมูลเซ็นเซอร์ (30 ค่าล่าสุด)
           </h3>
-          <canvas id="mainChart"></canvas>
+          <div class="h-64">
+            <canvas id="mainChart"></canvas>
+          </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4">
+        <!-- Event Log -->
+        <div class="card p-5">
+          <h3 class="text-sm font-medium text-gray-500 mb-3">
+            <i class="fas fa-clock-rotate-left text-gray-400 mr-1"></i>
+            ประวัติเหตุการณ์
+          </h3>
           <div
-            class="glass p-2 rounded-lg h-40 overflow-y-auto text-xs font-mono text-green-400 bg-black border border-green-900"
-            id="terminal"
+            class="h-56 overflow-y-auto space-y-2 text-sm"
+            id="event-log"
           >
-            > SYSTEM INITIALIZING...<br />
-            > WAITING FOR DATA STREAM...<br />
-          </div>
-
-          <div class="glass p-4 rounded-lg">
-            <h3 class="text-xs text-gray-400 mb-2">SYSTEM HEALTH</h3>
-            <div class="space-y-2">
-              <div class="flex justify-between text-xs text-gray-300">
-                <span>CPU LOAD</span>
-                <span id="cpu-load">12%</span>
-              </div>
-              <div class="w-full bg-gray-700 h-1">
-                <div
-                  class="bg-purple-500 h-1"
-                  style="width: 12%"
-                  id="cpu-bar"
-                ></div>
-              </div>
-
-              <div class="flex justify-between text-xs text-gray-300">
-                <span>MEMORY</span>
-                <span id="mem-load">45%</span>
-              </div>
-              <div class="w-full bg-gray-700 h-1">
-                <div
-                  class="bg-pink-500 h-1"
-                  style="width: 45%"
-                  id="mem-bar"
-                ></div>
-              </div>
-
-              <div class="flex justify-between text-xs text-gray-300">
-                <span>ESP32 TEMP</span>
-                <span id="esp-temp">42°C</span>
-              </div>
+            <div class="flex items-start gap-2 text-gray-400 text-xs">
+              <i class="fas fa-circle-info mt-0.5"></i>
+              <span>กำลังรอการเชื่อมต่อ...</span>
             </div>
           </div>
         </div>
@@ -145,146 +173,178 @@
     </div>
 
     <script>
-      // --- 1. ตั้งค่า Chart.js ---
+      // --- Chart.js Setup ---
       const ctxMain = document.getElementById("mainChart").getContext("2d");
-      const ctxRadar = document.getElementById("radarChart").getContext("2d");
 
-      // ข้อมูลกราฟ (Array ว่างๆ รอรับค่า)
-      const maxDataPoints = 30; // โชว์ 30 จุดย้อนหลัง
+      const maxDataPoints = 30;
       const labels = Array(maxDataPoints).fill("");
-      const soilData = Array(maxDataPoints).fill(0);
-      const lightData = Array(maxDataPoints).fill(0);
+      const soilData = Array(maxDataPoints).fill(null);
+      const lightData = Array(maxDataPoints).fill(null);
 
-      // สร้าง Main Chart (Line)
       const mainChart = new Chart(ctxMain, {
         type: "line",
         data: {
           labels: labels,
           datasets: [
             {
-              label: "Soil Moisture",
-              borderColor: "#3b82f6", // สีฟ้า
-              backgroundColor: "rgba(59, 130, 246, 0.1)",
+              label: "ความชื้นในดิน",
+              borderColor: "#3b82f6",
+              backgroundColor: "rgba(59, 130, 246, 0.08)",
               data: soilData,
-              tension: 0.4, // เส้นโค้งๆ
+              tension: 0.4,
               fill: true,
+              pointRadius: 2,
+              borderWidth: 2,
             },
             {
-              label: "Light Level",
-              borderColor: "#eab308", // สีเหลือง
-              backgroundColor: "rgba(234, 179, 8, 0.1)",
+              label: "ความเข้มแสง",
+              borderColor: "#eab308",
+              backgroundColor: "rgba(234, 179, 8, 0.08)",
               data: lightData,
               tension: 0.4,
               fill: true,
+              pointRadius: 2,
+              borderWidth: 2,
             },
           ],
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          animation: false, // ปิด Animation เพื่อความลื่นไหลเวลารับค่ารัวๆ
+          animation: false,
           scales: {
-            x: { display: false }, // ซ่อนแกน X ให้ดูมินิมอล
-            y: { grid: { color: "#1f2937" } }, // เส้นตารางสีจางๆ
+            x: { display: false },
+            y: {
+              min: 0,
+              max: 100,
+              grid: { color: "#f1f5f9" },
+              ticks: { color: "#94a3b8", font: { size: 11 } },
+            },
           },
-          plugins: { legend: { labels: { color: "white" } } },
+          plugins: {
+            legend: {
+              labels: {
+                color: "#64748b",
+                usePointStyle: true,
+                pointStyle: "circle",
+                font: { size: 12 },
+              },
+            },
+          },
         },
       });
 
-      // สร้าง Radar Chart (แมงมุม)
-      const radarChart = new Chart(ctxRadar, {
-        type: "radar",
-        data: {
-          labels: ["Soil", "Light", "Motion", "Temp", "Volt"],
-          datasets: [
-            {
-              label: "Sensor Fusion",
-              data: [0, 0, 0, 65, 80],
-              backgroundColor: "rgba(16, 185, 129, 0.2)",
-              borderColor: "#10b981",
-              pointBackgroundColor: "#fff",
-            },
-          ],
-        },
-        options: {
-          scales: {
-            r: {
-              grid: { color: "#374151" },
-              angleLines: { color: "#374151" },
-              pointLabels: { color: "white" },
-            },
-          },
-          plugins: { legend: { display: false } },
-        },
-      });
-
-      // --- 2. เชื่อมต่อ WebSocket ---
+      // --- WebSocket Connection ---
       const ws = new WebSocket("ws://" + window.location.host);
-      const terminal = document.getElementById("terminal");
+      const eventLog = document.getElementById("event-log");
 
       ws.onopen = () => {
-        logToTerminal("CONNECTION ESTABLISHED [OK]");
-        document.getElementById("server-ip").innerText = window.location.host;
+        addEvent("success", "เชื่อมต่อสำเร็จ");
+        document.getElementById("connection-status").innerText = "เชื่อมต่อแล้ว";
+        document.getElementById("status-dot").classList.add("status-online");
+        document.getElementById("status-dot").classList.remove("status-offline");
+      };
+
+      ws.onclose = () => {
+        addEvent("error", "การเชื่อมต่อขาดหาย");
+        document.getElementById("connection-status").innerText = "ไม่ได้เชื่อมต่อ";
+        document.getElementById("status-dot").classList.remove("status-online");
+        document.getElementById("status-dot").classList.add("status-offline");
       };
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        const now = new Date().toLocaleTimeString();
+        const now = new Date().toLocaleTimeString("th-TH");
 
-        // 1. อัปเดตตัวเลข
-        document.getElementById("soil").innerText = data.soil;
-        document.getElementById("light").innerText = data.light;
+        // Update soil moisture (data already in 0-100%)
+        const soilPercent = Math.max(0, Math.min(Math.round(data.soil), 100));
+        document.getElementById("soil").innerText = soilPercent + "%";
+        document.getElementById("soil-bar").style.width = soilPercent + "%";
+        document.getElementById("soil-desc").innerText = getSoilDescription(soilPercent);
 
-        const motionBox = document.getElementById("motion-box");
-        if (data.motion == 1) {
-          motionBox.innerText = "⚠️ INTRUDER DETECTED";
-          motionBox.classList.add("blink");
-          logToTerminal(`[WARN] MOTION AT ${now}`);
+        // Update light level (data already in 0-100%)
+        const lightPercent = Math.max(0, Math.min(Math.round(data.light), 100));
+        document.getElementById("light").innerText = lightPercent + "%";
+        document.getElementById("light-bar").style.width = lightPercent + "%";
+        document.getElementById("light-desc").innerText = getLightDescription(lightPercent);
+
+        // Update distance sensor (convert cm to m)
+        const distanceCard = document.getElementById("distance-card");
+        const distanceValue = document.getElementById("distance-value");
+        const distanceText = document.getElementById("distance-text");
+        const distanceIconBg = document.getElementById("distance-icon-bg");
+        const distanceIcon = document.getElementById("distance-icon");
+
+        const distanceInMeters = (data.distance / 100).toFixed(2);
+        distanceValue.innerHTML = `<span class="text-4xl font-bold text-purple-600">${distanceInMeters}</span><span class="text-lg text-gray-500"> m</span>`;
+
+        if (data.distance < 250) {
+          distanceCard.classList.add("alert-active");
+          distanceCard.style.borderLeft = "4px solid #ef4444";
+          distanceCard.style.background = "#fef2f2";
+          distanceText.innerText = "มีคนหรือวัตถุเดินผ่าน!";
+          distanceText.className = "text-sm font-semibold text-red-600";
+          distanceIconBg.className = "w-10 h-10 bg-red-100 rounded-full flex items-center justify-center";
+          distanceIcon.className = "fas fa-person-walking text-red-500 text-lg";
+          addEvent("warning", "ตรวจพบวัตถุที่ระยะ " + distanceInMeters + " m เวลา " + now);
         } else {
-          motionBox.innerText = "SECURE";
-          motionBox.classList.remove("blink");
+          distanceCard.classList.remove("alert-active");
+          distanceCard.style.borderLeft = "none";
+          distanceCard.style.background = "#ffffff";
+          distanceText.innerText = "ปลอดภัย - ไม่มีวัตถุเข้าใกล้";
+          distanceText.className = "text-sm font-semibold text-green-600";
+          distanceIconBg.className = "w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center";
+          distanceIcon.className = "fas fa-ruler text-purple-500 text-lg";
         }
 
-        // 2. อัปเดตกราฟ (ดันค่าใหม่เข้า ลบค่าเก่าออก)
-        soilData.push(data.soil);
+        // Update chart
+        soilData.push(soilPercent);
         soilData.shift();
-        lightData.push(data.light);
+        lightData.push(lightPercent);
         lightData.shift();
-
-        mainChart.update(); // สั่งวาดกราฟใหม่
-
-        // อัปเดต Radar Chart (สเกลค่าให้สวยๆ)
-        radarChart.data.datasets[0].data = [
-          data.soil / 40, // ย่อสเกล soil
-          data.light / 40, // ย่อสเกล light
-          data.motion * 100, // ถ้ามี Motion ให้พุ่งเต็มหลอด
-          Math.random() * 20 + 50, // ค่ามั่วๆ (Temp)
-          Math.random() * 10 + 80, // ค่ามั่วๆ (Volt)
-        ];
-        radarChart.update();
-
-        // 3. เอฟเฟกต์ตัวเลขสุ่ม (ให้ดูรกๆ)
-        updateFakeStats();
+        mainChart.update();
       };
 
-      function logToTerminal(text) {
-        terminal.innerHTML += `> ${text}<br>`;
-        terminal.scrollTop = terminal.scrollHeight; // เลื่อนลงล่างสุดเสมอ
+      function getSoilDescription(percent) {
+        if (percent < 25) return "ดินแห้งมาก - ควรรดน้ำ";
+        if (percent < 50) return "ดินค่อนข้างแห้ง";
+        if (percent < 75) return "ความชื้นปานกลาง";
+        return "ดินชุ่มชื้นดี";
       }
 
-      function updateFakeStats() {
-        // สุ่มเลขเล่นๆ ให้หน้าจอมันขยับดุ๊กดิ๊ก
-        let cpu = Math.floor(Math.random() * 30) + 10;
-        let mem = Math.floor(Math.random() * 10) + 40;
-
-        document.getElementById("cpu-load").innerText = cpu + "%";
-        document.getElementById("cpu-bar").style.width = cpu + "%";
-
-        document.getElementById("mem-load").innerText = mem + "%";
-        document.getElementById("mem-bar").style.width = mem + "%";
+      function getLightDescription(percent) {
+        if (percent < 12) return "มืด - แสงน้อยมาก";
+        if (percent < 37) return "แสงน้อย - ร่มเงา";
+        if (percent < 73) return "แสงปานกลาง";
+        return "แสงจ้า - โดนแดดเต็มที่";
       }
 
-      // จับเวลา Uptime เล่นๆ
+      function addEvent(type, message) {
+        const icons = {
+          success: '<i class="fas fa-check-circle text-green-500 mt-0.5"></i>',
+          warning: '<i class="fas fa-triangle-exclamation text-amber-500 mt-0.5"></i>',
+          error: '<i class="fas fa-circle-xmark text-red-500 mt-0.5"></i>',
+          info: '<i class="fas fa-circle-info text-blue-500 mt-0.5"></i>',
+        };
+        const time = new Date().toLocaleTimeString("th-TH");
+        const div = document.createElement("div");
+        div.className = "flex items-start gap-2 text-xs";
+        div.innerHTML = `
+          ${icons[type] || icons.info}
+          <div>
+            <span class="text-gray-700">${message}</span>
+            <span class="text-gray-400 ml-1">${time}</span>
+          </div>
+        `;
+        eventLog.prepend(div);
+
+        // Keep only last 50 events
+        while (eventLog.children.length > 50) {
+          eventLog.removeChild(eventLog.lastChild);
+        }
+      }
+
+      // Uptime counter
       let sec = 0;
       setInterval(() => {
         sec++;
